@@ -22,14 +22,14 @@ const (
 	ProtocolHTTPS Protocol = "https"
 )
 
-func Start(baseCtx context.Context, h http.Handler, opts *ServerOptions) error {
+func Run(baseCtx context.Context, h http.Handler, opts *ServerOptions) error {
 	if opts == nil {
 		opts = NewServerOptions()
 	}
 
 	// Set the write timeout to 0 if debug is enabled
-	h = h2c.NewHandler(h, &http2.Server{})
 	h = recoveryMiddleware(h)
+	h = h2c.NewHandler(h, &http2.Server{})
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("localhost:%s", opts.Port),
@@ -57,17 +57,20 @@ func Start(baseCtx context.Context, h http.Handler, opts *ServerOptions) error {
 	ctx, cancel := signal.NotifyContext(baseCtx, os.Interrupt, os.Kill)
 	defer cancel()
 
-	srvErrorChan := make(chan error, 1)
 	srvShutdownChan := make(chan struct{})
+	defer close(srvShutdownChan)
+
+	errServerChan := make(chan error, 1)
 
 	// Add graceful shutdown
 	go func() {
+		defer close(errServerChan)
 		select {
-		case <-srvErrorChan:
+		case <-errServerChan:
 		case <-ctx.Done():
 			slog.Info("Server is shutting down...")
 			if err := srv.Shutdown(context.Background()); err != nil {
-				slog.Error("Server shutdown error", slog.String("error", err.Error()))
+				slog.Error("Server shutdown error", slog.Any("error", err))
 			} else {
 				slog.Info("Server has been shutdown successfully")
 				srvShutdownChan <- struct{}{}
@@ -85,8 +88,7 @@ func Start(baseCtx context.Context, h http.Handler, opts *ServerOptions) error {
 	}
 
 	if err != nil && err != http.ErrServerClosed {
-		slog.Error("Server encountered an error", slog.String("error", err.Error()))
-		srvErrorChan <- err
+		errServerChan <- err
 		return err
 	}
 
@@ -103,11 +105,7 @@ func decodeTLSCredentials(certBase64, keyBase64 string) (tls.Certificate, error)
 	if err != nil {
 		return tls.Certificate{}, ErrDecodeKeyArgument{Type: "key"}
 	}
-	cert, err := tls.X509KeyPair(certPem, keyPem)
-	if err != nil {
-		return tls.Certificate{}, ErrInvalidCertKeyPair
-	}
-	return cert, nil
+	return tls.X509KeyPair(certPem, keyPem)
 }
 
 func recoveryMiddleware(next http.Handler) http.Handler {

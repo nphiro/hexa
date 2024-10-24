@@ -71,16 +71,17 @@ func Open[T any](c *CrypterClient, token string) (T, jwt.RegisteredClaims, error
 }
 
 func getRegisterClaims(base *ClientOptions, extended *SealOptions) jwt.RegisteredClaims {
+	now := time.Now()
 	claims := jwt.RegisteredClaims{
 		Issuer:    base.Issuer,
 		Subject:   base.Subject,
 		Audience:  base.Audience,
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		NotBefore: jwt.NewNumericDate(time.Now()),
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
 	}
 
 	if base.Duration > 0 {
-		claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(base.Duration))
+		claims.ExpiresAt = jwt.NewNumericDate(now.Add(base.Duration))
 	}
 
 	if extended == nil {
@@ -98,7 +99,7 @@ func getRegisterClaims(base *ClientOptions, extended *SealOptions) jwt.Registere
 	}
 	if extended.Duration != nil {
 		if *extended.Duration > 0 {
-			claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(*extended.Duration))
+			claims.ExpiresAt = jwt.NewNumericDate(now.Add(*extended.Duration))
 		} else {
 			claims.ExpiresAt = nil
 		}
